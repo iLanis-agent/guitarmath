@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GuitarMath - honest string tension math</title>
+<style>
+  :root { --bg:#161110; --card:#211915; --line:#3d2f24; --ink:#f0e6dc; --dim:#b3a090; --amber:#e08a3c; --warn:#e05c4a; --ok:#8fbf6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:28px 20px 80px; }
+  h1 { font-size:30px; margin:6px 0 0; } h1 span { color:var(--amber); }
+  nav { text-align:right; } nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+  nav a:hover { color:var(--amber); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-top:22px; }
+  .card h2 { margin:0 0 14px; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .row { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  label { display:block; font-size:12px; color:var(--dim); margin-bottom:4px; }
+  input, select { background:#181210; border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:15px; width:110px; }
+  select { width:auto; min-width:150px; }
+  .presets { margin-top:14px; display:flex; flex-wrap:wrap; gap:8px; }
+  .presets button { background:#2a2018; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
+  .presets button:hover { border-color:var(--amber); }
+  .stat { display:inline-block; background:#181210; border:1px solid var(--line); border-radius:10px; padding:12px 18px; margin:0 10px 10px 0; min-width:130px; }
+  .stat b { display:block; font-size:24px; color:var(--amber); }
+  .stat small { color:var(--dim); font-size:12px; }
+  .verdict { font-size:17px; margin:2px 0 14px; }
+  .verdict b { color:var(--amber); }
+  .fix { background:#2a1c12; border:1px solid #4f3620; border-radius:10px; padding:12px 16px; margin-top:8px; font-size:15px; }
+  .fix.ok { background:#1c2415; border-color:#3a4a28; }
+  .fix.warn { background:#2c1410; border-color:#5c2b20; }
+  .note { color:var(--dim); font-size:13px; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; margin-top:6px; font-size:15px; }
+  td, th { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="index.html">about</a></nav>
+  <h1>Guitar<span>Math</span></h1>
+  <div class="note" style="font-size:14px;">Tension is gauge squared times scale squared times pitch squared. Everything else is opinion.</div>
+
+  <div class="card">
+    <h2>The guitar</h2>
+    <div class="row">
+      <div><label>Scale length (in)</label><input id="scale" type="number" min="20" max="30" step="0.25" value="25.5"></div>
+      <div><label>Tuning shift (semitones)</label><input id="shift" type="number" min="-12" max="5" step="1" value="0"></div>
+    </div>
+    <div class="presets" id="presets"></div>
+    <div id="guitar"></div>
+  </div>
+
+  <div class="card">
+    <h2>One string</h2>
+    <div class="row">
+      <div><label>Gauge (in)</label><select id="gauge"></select></div>
+      <div><label>Type</label><select id="wound"><option value="0" selected>Plain steel</option><option value="1">Wound</option></select></div>
+      <div><label>Note</label><select id="note"></select></div>
+      <div><label>Shifted by (semitones)</label><input id="stringShift" type="number" min="-12" max="12" step="1" value="0" style="width:80px"></div>
+    </div>
+    <div id="string"></div>
+  </div>
+
+  <div class="card">
+    <h2>Heavier bottom picker</h2>
+    <div class="row">
+      <div><label>Keep tension near (lb)</label><input id="target" type="number" min="8" max="30" step="0.5" value="17.4"></div>
+      <div><label>On the note</label><select id="targetNote"></select></div>
+      <div><label>Shifted by (semitones)</label><input id="targetShift" type="number" min="-12" max="0" step="1" value="-2" style="width:80px"></div>
+    </div>
+    <div id="picker"></div>
+  </div>
+</div>
+<script src="engine.js"></script>
+<script>
+var $ = function(id){ return document.getElementById(id); };
+var gsel = $('gauge');
+GuitarEngine.STANDARD_GAUGES.forEach(function(d){
+  var o = document.createElement('option'); o.value = d; o.textContent = d.toFixed(3); gsel.appendChild(o);
+});
+gsel.value = '0.01';
+var notes = Object.keys(GuitarEngine.NOTES);
+[ $('note'), $('targetNote') ].forEach(function(sel){
+  notes.forEach(function(k){
+    var o = document.createElement('option'); o.value = k; o.textContent = k; sel.appendChild(o);
+  });
+});
+$('note').value = 'E4'; $('targetNote').value = 'E2';
+
+var PRESETS = {
+  'Strat 25.5" standard': { scale:25.5, shift:0 },
+  'Les Paul 24.75" standard': { scale:24.75, shift:0 },
+  'Drop D (25.5")': { scale:25.5, shift:-2 },
+  'Eb standard (24.75")': { scale:24.75, shift:-1 },
+  'Baritone 27" (B standard)': { scale:27, shift:-5 }
+};
+var pb = $('presets');
+Object.keys(PRESETS).forEach(function(name){
+  var b = document.createElement('button'); b.textContent = name;
+  b.onclick = function(){ $('scale').value = PRESETS[name].scale; $('shift').value = PRESETS[name].shift; render(); };
+  pb.appendChild(b);
+});
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+function render(){
+  var scale = parseFloat($('scale').value), shift = parseInt($('shift').value) || 0;
+  if (!(scale > 0)) { $('guitar').innerHTML = '<div class="note">Enter a scale length.</div>'; $('string').innerHTML=''; $('picker').innerHTML=''; return; }
+  var set = GuitarEngine.standardSet(Math.pow(2, shift / 12));
+  var rows = set.map(function(s, i){
+    var t = GuitarEngine.tension(s.gauge, scale, s.freq, s.wound);
+    var names = ['high E','B','G','D','A','low E'];
+    return '<tr><td>' + names[i] + '</td><td>' + s.gauge.toFixed(3) + (s.wound ? ' wound' : ' plain') + '</td><td>' + t + ' lb</td><td>' + esc(GuitarEngine.tensionVerdict(t)) + '</td></tr>';
+  }).join('');
+  var total = GuitarEngine.setTotal(scale, set);
+  var ref25 = GuitarEngine.setTotal(25.5, GuitarEngine.standardSet());
+  var scaleNote = scale === 25.5 && shift === 0 ? '' :
+    '<div class="note">For reference, the same 10-46 set at 25.5in standard pulls ' + ref25 + ' lb. Tension moves with the square of scale and the square of pitch - a quarter inch of scale or one semitone is not a small thing.</div>';
+  $('guitar').innerHTML =
+    '<div class="verdict">A 10-46 set on <b>' + scale + 'in</b>' + (shift ? (shift > 0 ? ' tuned up ' + shift : ' tuned down ' + (-shift)) + ' semitone' + (Math.abs(shift) > 1 ? 's' : '') : ' in standard') + ' pulls <b>' + total + ' lb</b> across the neck.</div>' +
+    '<span class="stat"><b>' + total + ' lb</b><small>total set tension</small></span>' +
+    '<span class="stat"><b>' + Math.round(total / 6) + ' lb</b><small>average per string</small></span>' +
+    '<table><tr><th>String</th><th>Gauge</th><th>Tension</th><th>Feel</th></tr>' + rows + '</table>' + scaleNote;
+
+  var g = parseFloat($('gauge').value), wound = $('wound').value === '1';
+  var base = GuitarEngine.NOTES[$('note').value];
+  var ss = parseInt($('stringShift').value) || 0;
+  var f = GuitarEngine.semitoneFreq(base, ss);
+  var t = GuitarEngine.tension(g, scale, f, wound);
+  var verdict = GuitarEngine.tensionVerdict(t);
+  $('string').innerHTML =
+    '<div class="verdict">A ' + g.toFixed(3) + (wound ? ' wound' : ' plain') + ' at ' + Math.round(f) + ' Hz on ' + scale + 'in pulls <b>' + t + ' lb</b>.</div>' +
+    '<span class="stat"><b>' + t + ' lb</b><small>string tension</small></span>' +
+    '<span class="stat"><b>' + Math.round(f) + ' Hz</b><small>pitch (' + $('note').value + (ss ? (ss > 0 ? '+' : '') + ss : '') + ')</small></span>' +
+    '<div class="fix' + (t < 12 ? ' warn' : ' ok') + '">' + esc(verdict) + '</div>' +
+    '<div class="note">Plain strings use the full music-wire density; wound strings carry only about 80% of a solid wire\'s mass (the winding is mostly air). Calibrated against D\'Addario\'s published numbers within half a pound.</div>';
+
+  var target = parseFloat($('target').value);
+  var tBase = GuitarEngine.NOTES[$('targetNote').value];
+  var tShift = parseInt($('targetShift').value) || 0;
+  var tf = GuitarEngine.semitoneFreq(tBase, tShift);
+  var pick = GuitarEngine.gaugeForTension(target, scale, tf, true);
+  $('picker').innerHTML =
+    '<div class="verdict">To keep <b>' + target + ' lb</b> on ' + $('targetNote').value + (tShift ? ' shifted ' + tShift : '') + ' (' + Math.round(tf) + ' Hz), put a <b>' + pick.gauge.toFixed(3) + ' wound</b> on it (' + pick.tension + ' lb).</div>' +
+    '<div class="note">This is how you keep a detuned bottom end from going floppy: heavier wire to buy back the tension the lower pitch took away. Same math explains baritone sets.</div>';
+}
+['scale','shift','gauge','wound','note','stringShift','target','targetNote','targetShift'].forEach(function(id){ $(id).addEventListener('input', render); });
+render();
+</script>
+</body>
+</html>
